@@ -36,7 +36,7 @@ jobs:
 
       - name: Build di verifica (simulatore, senza firma)
         if: ${{ !inputs.upload }}
-        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
+        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
 
       - name: Importa certificato di distribuzione
         if: ${{ inputs.upload }}
@@ -64,7 +64,8 @@ jobs:
             -p:CodesignKey="Apple Distribution" \
             -p:ApplicationVersion=${{ github.run_number }} \
             -p:ValidateXcodeVersion=false \
-            -o out
+            -o out 2>&1 | tee build.log
+          test ${PIPESTATUS[0]} -eq 0
           IPA=$(ls out/*.ipa | head -1)
           echo "IPA=$IPA" >> "$GITHUB_ENV"
 
@@ -76,6 +77,16 @@ jobs:
           issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
           api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+
+      - name: Riepilogo errori di build
+        if: failure()
+        run: |
+          [ -f build.log ] || exit 0
+          grep -E "error [A-Z]+[0-9]+|: error " build.log | sed -E 's#^.*/src/#src/#' | sort -u | head -60 > errors.txt || true
+          if [ -s errors.txt ]; then
+            MSG=$(sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' errors.txt)
+            echo "::error title=Errori di compilazione::$MSG"
+          fi
 
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.upload }}
