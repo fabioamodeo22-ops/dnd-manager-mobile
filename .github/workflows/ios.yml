@@ -36,7 +36,7 @@ jobs:
 
       - name: Build di verifica (simulatore, senza firma)
         if: ${{ !inputs.upload }}
-        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false -v:n 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
 
       - name: Importa certificato di distribuzione
         if: ${{ inputs.upload }}
@@ -82,7 +82,7 @@ jobs:
         if: failure()
         run: |
           [ -f build.log ] || exit 0
-          grep -E -A6 "error|ILLink|Unhandled exception" build.log | cut -c1-400 | awk '!seen[$0]++' | head -120 > errors.txt || true
+          { grep -E -B3 -A25 "Unhandled exception|Fatal error|IL1012" build.log; grep -E "error [A-Z]+[0-9]+" build.log; } | cut -c1-300 | awk '!seen[$0]++' | head -150 > errors.txt || true
           if [ -s errors.txt ]; then
             MSG=$(sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' errors.txt)
             echo "::error title=Errori di compilazione::$MSG"
