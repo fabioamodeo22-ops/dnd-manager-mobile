@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     env:
       PROJECT: src/DnDManager.Mobile/DnDManager.Mobile.csproj
@@ -22,10 +22,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Seleziona l'Xcode 26 più recente
+      # Il workload .NET per iOS richiede l'Xcode della stessa generazione dell'SDK (es. .NET iOS 27.x -> Xcode 27)
+      - name: Seleziona l'Xcode più recente
         run: |
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$XCODE" ]; then XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1); fi
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
           echo "Uso $XCODE"
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
