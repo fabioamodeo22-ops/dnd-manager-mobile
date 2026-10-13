@@ -40,7 +40,7 @@ jobs:
 
       - name: Build di verifica (simulatore, senza firma)
         if: ${{ !inputs.upload }}
-        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false -v:n 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly -v:n 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
 
       - name: Importa certificato di distribuzione
         if: ${{ inputs.upload }}
@@ -67,7 +67,7 @@ jobs:
             -p:ArchiveOnBuild=true \
             -p:CodesignKey="Apple Distribution" \
             -p:ApplicationVersion=${{ github.run_number }} \
-            -p:ValidateXcodeVersion=false \
+            -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly \
             -o out 2>&1 | tee build.log
           test ${PIPESTATUS[0]} -eq 0
           IPA=$(ls out/*.ipa | head -1)
