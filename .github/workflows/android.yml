@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -68,6 +71,14 @@ jobs:
             MSG=$(sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' errors.txt)
             echo "::error title=Errori di compilazione::$MSG"
           fi
+          # salva il log completo sul branch ci-logs (consultabile anche senza accesso ai log di Actions)
+          git config user.name "ci" && git config user.email "ci@users.noreply.github.com"
+          cp build.log "/tmp/${{ github.workflow }}-build.log"
+          git fetch origin ci-logs 2>/dev/null && git checkout -B ci-logs origin/ci-logs || git checkout --orphan ci-logs
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          cp "/tmp/${{ github.workflow }}-build.log" "${{ github.workflow }}-build.log"
+          git add "${{ github.workflow }}-build.log"
+          git commit -m "log run ${{ github.run_number }}" && git push -f origin ci-logs || true
 
       - uses: actions/upload-artifact@v4
         with:
