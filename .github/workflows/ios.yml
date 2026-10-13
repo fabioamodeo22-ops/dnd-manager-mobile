@@ -33,10 +33,17 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '10.0.1xx'
 
-      - name: Installa workload MAUI iOS
-        run: dotnet workload install maui-ios
+      # I runner GitHub hanno al massimo Xcode 26.x (SDK iOS 26.5), mentre l'ultimo workload .NET per iOS
+      # richiede l'SDK iOS 27 / Xcode 27. Si fissa quindi il manifest iOS all'ultima versione per SDK 26.5.
+      # Quando i runner avranno Xcode 27 basta togliere il rollback e tornare a 'dotnet workload install maui-ios'.
+      - name: Installa workload MAUI iOS (allineato a Xcode 26)
+        run: |
+          dotnet workload config --update-mode manifests || true
+          echo '{"microsoft.net.sdk.ios":"26.5.10318/10.0.100"}' > "$RUNNER_TEMP/rollback.json"
+          dotnet workload install maui-ios --from-rollback-file "$RUNNER_TEMP/rollback.json"
+          dotnet workload list
 
       - name: Build di verifica (simulatore, senza firma)
         if: ${{ !inputs.upload }}
