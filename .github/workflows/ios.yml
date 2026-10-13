@@ -29,8 +29,17 @@ jobs:
           # il workload è fissato a SDK iOS 26.5: si preferisce Xcode 26.5, altrimenti il 26.x più recente
           XCODE=$(ls -d /Applications/Xcode_26.5*.app 2>/dev/null | grep -vi beta | sort -V | tail -1)
           [ -n "$XCODE" ] || XCODE=$(ls -d /Applications/Xcode_26*.app | grep -vi beta | sort -V | tail -1)
+          XCODE=$(cd "$XCODE" && pwd -P)
           echo "Uso $XCODE"
           sudo xcode-select -s "$XCODE/Contents/Developer"
+          # alcune immagini dei runner non hanno i link generici (MacOSX.sdk, iPhoneOS.sdk...) richiesti da actool
+          for P in MacOSX iPhoneOS iPhoneSimulator; do
+            D="$XCODE/Contents/Developer/Platforms/$P.platform/Developer/SDKs"
+            if [ -d "$D" ] && [ ! -e "$D/$P.sdk" ]; then
+              V=$(ls -d "$D/$P"[0-9]*.sdk 2>/dev/null | sort -V | tail -1)
+              [ -n "$V" ] && sudo ln -s "$(basename "$V")" "$D/$P.sdk" && echo "creato link $D/$P.sdk -> $(basename "$V")"
+            fi
+          done
           xcodebuild -version
 
       - uses: actions/setup-dotnet@v5
