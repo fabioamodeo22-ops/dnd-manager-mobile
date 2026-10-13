@@ -73,7 +73,7 @@ Secrets del repository (Settings → Secrets and variables → Actions):
 
 I minuti macOS nei repository privati valgono 10 volte quelli Linux. Per questo la pipeline iOS non parte da sola.
 
-> Nota Xcode: il workload .NET per iOS attuale (SDK iOS 27) chiederebbe Xcode 27, mentre i runner GitHub hanno al massimo Xcode 26.6. La pipeline usa quindi `-p:MtouchLink=SdkOnly`, che permette di compilare con Xcode 26. Quando i runner avranno Xcode 27 potrai togliere quel parametro da `ios.yml`.
+> Nota Xcode: i runner GitHub hanno al massimo Xcode 26.x, mentre l'ultimo workload .NET per iOS chiede Xcode 27. Per questo `ios.yml` fissa il workload iOS alla versione per SDK 26.5 (file di rollback) e usa Xcode 26.5. Quando i runner avranno Xcode 27 basta tornare a `dotnet workload install maui-ios`.
 >
 > Se una build fallisce, il log completo viene salvato nel branch `ci-logs`.
 
