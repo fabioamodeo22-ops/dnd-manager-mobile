@@ -15,8 +15,9 @@ jobs:
     timeout-minutes: 60
     env:
       PROJECT: src/DnDManager.Mobile/DnDManager.Mobile.csproj
+      TARGETS: net10.0-ios
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Seleziona l'Xcode 26 più recente
         run: |
@@ -26,7 +27,7 @@ jobs:
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -35,7 +36,7 @@ jobs:
 
       - name: Build di verifica (simulatore, senza firma)
         if: ${{ !inputs.upload }}
-        run: dotnet build $PROJECT -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
+        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
 
       - name: Importa certificato di distribuzione
         if: ${{ inputs.upload }}
@@ -57,7 +58,7 @@ jobs:
       - name: Publish IPA firmato
         if: ${{ inputs.upload }}
         run: |
-          dotnet publish $PROJECT -f net10.0-ios -c Release \
+          dotnet publish $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Release \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:ArchiveOnBuild=true \
             -p:CodesignKey="Apple Distribution" \

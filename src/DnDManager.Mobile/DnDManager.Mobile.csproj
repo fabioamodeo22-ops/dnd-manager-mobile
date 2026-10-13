@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <PropertyGroup>
-    <TargetFrameworks>net10.0-android;net10.0-ios</TargetFrameworks>
+    <!-- In CI si compila una piattaforma alla volta con -p:MobileTargets=net10.0-android (o net10.0-ios) -->
+    <MobileTargets Condition="'$(MobileTargets)' == ''">net10.0-android;net10.0-ios</MobileTargets>
+    <TargetFrameworks>$(MobileTargets)</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <RootNamespace>DnDManager.Mobile</RootNamespace>
     <UseMaui>true</UseMaui>

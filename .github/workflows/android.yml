@@ -11,15 +11,16 @@ jobs:
     timeout-minutes: 45
     env:
       PROJECT: src/DnDManager.Mobile/DnDManager.Mobile.csproj
+      TARGETS: net10.0-android
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: microsoft
           java-version: '17'
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
@@ -27,7 +28,7 @@ jobs:
         run: dotnet workload install maui-android
 
       - name: Installa dipendenze Android SDK
-        run: dotnet build $PROJECT -t:InstallAndroidDependencies -f net10.0-android -p:AndroidSdkDirectory="$ANDROID_HOME" -p:AcceptAndroidSDKLicenses=True
+        run: dotnet build $PROJECT -p:MobileTargets=$TARGETS -t:InstallAndroidDependencies -f net10.0-android -p:AndroidSdkDirectory="$ANDROID_HOME" -p:AcceptAndroidSDKLicenses=True
 
       - name: Prepara keystore di firma (se configurato)
         id: keystore
@@ -52,7 +53,7 @@ jobs:
           if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
             SIGN_ARGS="-p:AndroidKeyStore=true -p:AndroidSigningKeyStore=$RUNNER_TEMP/upload.keystore -p:AndroidSigningStorePass=env:KS_PASS -p:AndroidSigningKeyAlias=$KEY_ALIAS -p:AndroidSigningKeyPass=env:KEY_PASS"
           fi
-          dotnet publish $PROJECT -f net10.0-android -c Release \
+          dotnet publish $PROJECT -p:MobileTargets=$TARGETS -f net10.0-android -c Release \
             -p:ApplicationVersion=${{ github.run_number }} \
             -p:AndroidPackageFormats="aab;apk" \
             $SIGN_ARGS -o out
