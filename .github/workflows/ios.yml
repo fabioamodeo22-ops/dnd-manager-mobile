@@ -26,7 +26,9 @@ jobs:
       - name: Seleziona l'Xcode più recente
         run: |
           ls -d /Applications/Xcode*.app
-          XCODE=$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)
+          # il workload è fissato a SDK iOS 26.5: si preferisce Xcode 26.5, altrimenti il 26.x più recente
+          XCODE=$(ls -d /Applications/Xcode_26.5*.app 2>/dev/null | grep -vi beta | sort -V | tail -1)
+          [ -n "$XCODE" ] || XCODE=$(ls -d /Applications/Xcode_26*.app | grep -vi beta | sort -V | tail -1)
           echo "Uso $XCODE"
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
@@ -69,13 +71,14 @@ jobs:
       - name: Publish IPA firmato
         if: ${{ inputs.upload }}
         run: |
+          { ls -d /Applications/Xcode*.app; xcode-select -p; xcrun --sdk iphoneos --show-sdk-path; xcrun --sdk macosx --show-sdk-path; } > build.log 2>&1 || true
           dotnet publish $PROJECT -p:MobileTargets=$TARGETS -f net10.0-ios -c Release \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:ArchiveOnBuild=true \
             -p:CodesignKey="Apple Distribution" \
             -p:ApplicationVersion=${{ github.run_number }} \
             -p:ValidateXcodeVersion=false -p:MtouchLink=SdkOnly \
-            -o out 2>&1 | tee build.log
+            -o out 2>&1 | tee -a build.log
           test ${PIPESTATUS[0]} -eq 0
           IPA=$(ls out/*.ipa | head -1)
           echo "IPA=$IPA" >> "$GITHUB_ENV"
