@@ -63,7 +63,7 @@ jobs:
         if: failure()
         run: |
           [ -f build.log ] || exit 0
-          grep -E "error [A-Z]+[0-9]+|: error " build.log | sed -E 's#^.*/src/#src/#' | sort -u | head -60 > errors.txt || true
+          grep -E -A6 "error|ILLink|Unhandled exception" build.log | cut -c1-400 | awk '!seen[$0]++' | head -120 > errors.txt || true
           if [ -s errors.txt ]; then
             MSG=$(sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' errors.txt)
             echo "::error title=Errori di compilazione::$MSG"
