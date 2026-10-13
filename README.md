@@ -98,6 +98,16 @@ Preparazione su Apple (una volta):
 | `APPSTORE_KEY_ID` | Key ID della chiave |
 | `APPSTORE_PRIVATE_KEY` | contenuto del file `.p8` (testo completo) |
 
+## Quali file caricare negli store
+
+| Store | File | Dove lo trovi |
+|---|---|---|
+| Google Play | `com.fabioamodeo.dndmanager-Signed.aab` | Actions → Android → run verde → Artifacts → `android-N` (zip). La firma è valida solo se i secrets `ANDROID_*` sono impostati; altrimenti la run mostra l'avviso "Nessun keystore". |
+| Google Play | icona 512×512, immagine in evidenza 1024×500, screenshot | `play-icon-512.png`, `play-feature-1024x500.png`; gli screenshot li fai dal telefono |
+| App Store | nessun file a mano | Actions → iOS → Run workflow con `upload` ✓: la build arriva su App Store Connect → TestFlight, poi la selezioni nella versione |
+| App Store | screenshot iPhone 6,9" (1320×2868) e iPad 13" (2064×2752) | dal telefono/tablet, tramite TestFlight |
+| Entrambi | testi, URL privacy e supporto | `docs/store-listing.md`; le pagine `docs/` sono pubblicate con GitHub Pages |
+
 ## Pubblicazione negli store: checklist
 
 - **Versione:** `ApplicationDisplayVersion` nel `.csproj` è la versione visibile. Il numero di build viene preso in automatico dal numero della run di GitHub.
