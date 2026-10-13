@@ -1,0 +1,148 @@
+@page "/missioni/{Id:long}"
+@inject UiState Ui
+@inject NavigationManager Nav
+@inject DeviceActions Device
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_q == null)
+{
+    <Empty Icon="🧭">Missione non trovata.</Empty>
+}
+else if (!AppSession.IsMaster)
+{
+    <div class="card parchment">
+        <div class="small muted">@CharacterRules.QuestIcon(_q.Status) @_q.Status</div>
+        <h2 style="margin-top:4px">@_q.Title</h2>
+        <p class="pre">@(string.IsNullOrWhiteSpace(_q.Description) ? "Nessuna descrizione." : _q.Description)</p>
+    </div>
+}
+else
+{
+    @if (_q.IsLocked)
+    {
+        <div class="card" style="border-color:var(--danger)">
+            <b>🔒 Missione bloccata</b>
+            <p class="small muted">È nascosta ai Giocatori (di solito perché una missione collegata è fallita).</p>
+            <button class="btn small" @onclick="Unlock">Recupera missione</button>
+        </div>
+    }
+
+    <div class="card">
+        <label>Titolo</label>
+        <input type="text" @bind="_q.Title" />
+
+        <label>Stato</label>
+        <select @bind="_q.Status">
+            @foreach (var s in CharacterRules.QuestStatuses)
+            {
+                <option value="@s">@CharacterRules.QuestIcon(s) @s</option>
+            }
+        </select>
+
+        <label>Descrizione e obiettivi</label>
+        <textarea @bind="_q.Description"></textarea>
+
+        <label>Missione collegata (si blocca se questa fallisce)</label>
+        <select @bind="LinkedId">
+            <option value="0">— nessuna —</option>
+            @foreach (var o in _others)
+            {
+                <option value="@o.Id">@o.Title</option>
+            }
+        </select>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0">🛡️ Note riservate al Master</h3>
+        <textarea @bind="_masterNote" placeholder="Visibili solo a te"></textarea>
+    </div>
+
+    <div class="btn-row">
+        <button class="btn" disabled="@_busy" @onclick="Save">💾 Salva</button>
+    </div>
+    <div class="btn-row">
+        <button class="btn danger small" disabled="@_busy" @onclick="Delete">🗑 Elimina missione</button>
+    </div>
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private Quest? _q;
+    private string _previousStatus = "";
+    private List<Quest> _others = new();
+    private string _masterNote = "";
+    private bool _loading = true, _busy;
+
+    private long LinkedId
+    {
+        get => _q?.LinkedQuestId ?? 0;
+        set { if (_q != null) _q.LinkedQuestId = value == 0 ? null : value; }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Ui.SetTitle("🧭 Missione");
+        _loading = true;
+        try
+        {
+            var all = await RemoteQuests.GetAllAsync();
+            _q = all.FirstOrDefault(x => x.Id == Id);
+            _others = all.Where(x => x.Id != Id).OrderBy(x => x.Title).ToList();
+            _previousStatus = _q?.Status ?? "";
+            if (_q != null && AppSession.IsMaster)
+                _masterNote = await RemoteQuests.GetMasterNoteAsync(_q.Id);
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Save()
+    {
+        if (_q == null) return;
+        _busy = true;
+        try
+        {
+            await RemoteQuests.SaveAsync(_q);
+            await RemoteQuests.SaveMasterNoteAsync(_q.Id, _masterNote);
+
+            // Stessa regola della versione PC: se fallisce, la missione collegata viene bloccata
+            if (_q.Status == "Fallita" && _previousStatus != "Fallita" && _q.LinkedQuestId.HasValue)
+            {
+                await RemoteQuests.SetLockedAsync(_q.LinkedQuestId.Value, true);
+                Ui.ShowToast("Salvato ✓ — missione collegata bloccata.");
+            }
+            else Ui.ShowToast("Missione salvata ✓");
+            _previousStatus = _q.Status;
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task Unlock()
+    {
+        if (_q == null) return;
+        try
+        {
+            await RemoteQuests.SetLockedAsync(_q.Id, false);
+            _q.IsLocked = false;
+            Ui.ShowToast("Missione recuperata ✓");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    private async Task Delete()
+    {
+        if (_q == null) return;
+        if (!await Device.ConfirmAsync("Elimina", $"Eliminare la missione \"{_q.Title}\"?", "Elimina")) return;
+        try
+        {
+            await RemoteQuests.DeleteAsync(_q.Id);
+            Nav.NavigateTo("missioni");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+}

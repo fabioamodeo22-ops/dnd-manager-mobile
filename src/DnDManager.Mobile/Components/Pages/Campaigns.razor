@@ -1,0 +1,104 @@
+@page "/campagne"
+@layout BareLayout
+@inject SessionStore Store
+@inject NavigationManager Nav
+@inject UiState Ui
+@inject DeviceActions Device
+
+<div style="display:flex; align-items:center; gap:10px">
+    <h1 style="flex:1; margin:0">Le tue campagne</h1>
+    <button class="icon-btn" aria-label="Aggiorna" @onclick="LoadAsync">⟳</button>
+</div>
+<p class="muted small">Connesso come <b>@AppSession.UserName</b> · @AppSession.Email</p>
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_error != null)
+{
+    <div class="card"><p>@_error</p><button class="btn block" @onclick="LoadAsync">Riprova</button></div>
+}
+else if (_items.Count == 0)
+{
+    <Empty Icon="🏰">Non partecipi ancora a nessuna campagna.<br />Creane una qui sotto, oppure chiedi al tuo Master di aggiungerti.</Empty>
+}
+else
+{
+    <div class="list">
+        @foreach (var m in _items)
+        {
+            <a class="row" @onclick="() => Enter(m)">
+                <div class="avatar">@(m.IsMaster ? "🛡️" : "🎲")</div>
+                <div class="grow">
+                    <div class="name serif">@m.Name</div>
+                    <div class="sub">@(m.IsMaster ? "Sei il Master" : "Giocatore")</div>
+                </div>
+                <span class="chev">›</span>
+            </a>
+        }
+    </div>
+}
+
+<div class="card mt">
+    <h3 style="margin-top:0">Nuova campagna</h3>
+    <input type="text" placeholder="Nome della campagna" @bind="_newName" />
+    <button class="btn block mt" disabled="@_busy" @onclick="Create">Crea (ne sarai il Master)</button>
+</div>
+
+<div class="btn-row">
+    <button class="btn ghost" @onclick="Logout">↪ Esci</button>
+</div>
+
+@code {
+    private List<CampaignMembership> _items = new();
+    private bool _loading = true, _busy;
+    private string? _error;
+    private string _newName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!SupabaseService.IsSignedIn) { Nav.NavigateTo("login", replace: true); return; }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true; _error = null;
+        try { _items = await RemoteCampaigns.GetMineAsync(); }
+        catch (Exception ex) { _error = "Errore di connessione: " + UiState.Friendly(ex); }
+        finally { _loading = false; }
+    }
+
+    private void Enter(CampaignMembership m)
+    {
+        SessionStore.EnterCampaign(m);
+        Store.RememberCampaign(m);
+        Nav.NavigateTo("home");
+    }
+
+    private async Task Create()
+    {
+        var name = _newName.Trim();
+        if (name.Length == 0) { Ui.ShowToast("Inserisci un nome per la campagna.", true); return; }
+        _busy = true;
+        try
+        {
+            await RemoteCampaigns.CreateAsync(name);
+            _newName = "";
+            await LoadAsync();
+            Ui.ShowToast("Campagna creata ✓ — ne sei il Master.");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task Logout()
+    {
+        if (!await Device.ConfirmAsync("Esci", "Vuoi uscire dall'account su questo telefono?")) return;
+        Store.ForgetCampaign();
+        AppSession.CampaignId = 0;
+        SupabaseService.SignOut();
+        Nav.NavigateTo("login", replace: true);
+    }
+}

@@ -1,0 +1,46 @@
+@page "/"
+@layout BareLayout
+@inject SessionStore Store
+@inject NavigationManager Nav
+
+<div class="boot" style="min-height:80vh">
+    <div class="boot-die">⬢</div>
+    <div class="boot-text">Apertura del grimorio…</div>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        // Già autenticato (es. torno qui dopo "Cambia campagna")
+        if (SupabaseService.IsSignedIn)
+        {
+            Nav.NavigateTo("campagne", replace: true);
+            return;
+        }
+
+        if (await Store.TryRestoreAsync())
+        {
+            // riapre direttamente l'ultima campagna, se l'utente ne è ancora membro
+            var last = Store.LastCampaign();
+            if (last != null)
+            {
+                try
+                {
+                    var mine = await RemoteCampaigns.GetMineAsync();
+                    var match = mine.FirstOrDefault(m => m.CampaignId == last.CampaignId);
+                    if (match != null)
+                    {
+                        SessionStore.EnterCampaign(match);
+                        Nav.NavigateTo("home", replace: true);
+                        return;
+                    }
+                }
+                catch { /* offline: si passa alla scelta campagna, che mostrerà l'errore */ }
+            }
+            Nav.NavigateTo("campagne", replace: true);
+            return;
+        }
+
+        Nav.NavigateTo("login", replace: true);
+    }
+}

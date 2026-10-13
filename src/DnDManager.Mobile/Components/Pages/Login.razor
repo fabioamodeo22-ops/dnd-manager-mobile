@@ -1,0 +1,90 @@
+@page "/login"
+@layout BareLayout
+@inject SessionStore Store
+@inject NavigationManager Nav
+@inject DeviceActions Device
+
+<div class="login-hero">
+    <div class="sigil">⬢</div>
+    <h1>Grimorio del Master</h1>
+    <div class="muted">Le tue campagne di D&amp;D, sempre con te</div>
+</div>
+
+<div class="card">
+    <h2 style="margin-top:0">@(_signUp ? "Crea un nuovo account" : "Accedi al tuo account")</h2>
+
+    @if (_signUp)
+    {
+        <label>Nome utente</label>
+        <input type="text" @bind="_username" autocomplete="username" autocapitalize="none" />
+    }
+
+    <label>@(_signUp ? "Email" : "Email o nome utente")</label>
+    <input type="@(_signUp ? "email" : "text")" @bind="_email" autocomplete="username" autocapitalize="none" autocorrect="off" />
+
+    <label>Password</label>
+    <input type="password" @bind="_password" autocomplete="@(_signUp ? "new-password" : "current-password")" @onkeyup="OnKey" />
+
+    @if (!string.IsNullOrEmpty(_status))
+    {
+        <p class="small" style="color:#f0a196; margin-top:10px">@_status</p>
+    }
+
+    <button class="btn block mt" disabled="@_busy" @onclick="Submit">
+        @(_busy ? "⏳ Attendere…" : _signUp ? "Registrati" : "Accedi")
+    </button>
+    <button class="btn ghost block mt" disabled="@_busy" @onclick="Toggle">
+        @(_signUp ? "Hai già un account? Accedi" : "Non hai un account? Registrati")
+    </button>
+</div>
+
+<p class="small muted center">Usa lo stesso account della versione per PC: campagne e personaggi sono condivisi.</p>
+
+@code {
+    private bool _signUp, _busy;
+    private string _email = "", _password = "", _username = "", _status = "";
+
+    private void Toggle() { _signUp = !_signUp; _status = ""; }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Submit();
+    }
+
+    private async Task Submit()
+    {
+        var input = _email.Trim();
+        if (string.IsNullOrEmpty(input) || string.IsNullOrEmpty(_password))
+        {
+            _status = _signUp ? "Inserisci email e password." : "Inserisci email o nome utente, e password.";
+            return;
+        }
+        if (_signUp && string.IsNullOrWhiteSpace(_username)) { _status = "Inserisci un nome utente."; return; }
+
+        _busy = true; _status = "";
+        try
+        {
+            var email = input;
+            if (!_signUp && !input.Contains('@'))
+            {
+                var resolved = await SupabaseService.ResolveEmailByUsernameAsync(input);
+                if (resolved == null) { _status = "Nome utente non trovato."; return; }
+                email = resolved;
+            }
+
+            var result = _signUp
+                ? await SupabaseService.SignUpAsync(email, _password, _username.Trim())
+                : await SupabaseService.SignInAsync(email, _password);
+
+            if (!result.Success) { _status = result.Error ?? "Operazione non riuscita."; return; }
+
+            await Store.LoadIdentityAsync(_signUp ? _username.Trim() : null);
+            if (_signUp)
+                await Device.AlertAsync("Registrazione completata", "Account creato! Benvenuto nel Grimorio.");
+
+            Nav.NavigateTo("campagne", replace: true);
+        }
+        catch (Exception ex) { _status = UiState.Friendly(ex); }
+        finally { _busy = false; }
+    }
+}

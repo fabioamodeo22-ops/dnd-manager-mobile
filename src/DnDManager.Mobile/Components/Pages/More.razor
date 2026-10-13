@@ -1,0 +1,79 @@
+@page "/altro"
+@inject UiState Ui
+@inject NavigationManager Nav
+@inject SessionStore Store
+@inject DeviceActions Device
+
+<div class="list">
+    @if (AppSession.IsMaster)
+    {
+        <a class="row" href="storia"><div class="avatar">📖</div><div class="grow"><div class="name">Storia</div><div class="sub">Diario della campagna e spunti narrativi</div></div><span class="chev">›</span></a>
+    }
+    <a class="row" href="note"><div class="avatar">📝</div><div class="grow"><div class="name">I miei appunti</div><div class="sub">Privati, visibili solo a te</div></div><span class="chev">›</span></a>
+    <a class="row" href="incantesimi"><div class="avatar">✨</div><div class="grow"><div class="name">Incantesimi e trucchetti</div></div><span class="chev">›</span></a>
+    <a class="row" href="equipaggiamento"><div class="avatar">🎒</div><div class="grow"><div class="name">Equipaggiamento</div></div><span class="chev">›</span></a>
+    <a class="row" href="file"><div class="avatar">📁</div><div class="grow"><div class="name">File della campagna</div><div class="sub">Musica, immagini, PDF</div></div><span class="chev">›</span></a>
+    <a class="row" href="manuali"><div class="avatar">📚</div><div class="grow"><div class="name">Manuali</div></div><span class="chev">›</span></a>
+    <a class="row" href="dadi"><div class="avatar">🎲</div><div class="grow"><div class="name">Dadi</div></div><span class="chev">›</span></a>
+</div>
+
+<h2>Account</h2>
+<div class="card">
+    <div><b>@AppSession.UserName</b></div>
+    <div class="small muted">@AppSession.Email</div>
+    <div class="small muted">@(AppSession.IsMaster ? "🛡️ Master" : "🎲 Giocatore") in “@AppSession.CampaignName”</div>
+    <div class="btn-row">
+        <button class="btn ghost" @onclick="SwitchCampaign">🏰 Cambia campagna</button>
+        <button class="btn ghost" @onclick="Logout">↪ Esci</button>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0">Zona pericolosa</h3>
+    <p class="small muted">Elimina definitivamente il tuo account e i tuoi dati personali (appunti, file caricati, iscrizioni alle campagne). L'operazione non è reversibile.</p>
+    <button class="btn danger block" disabled="@_busy" @onclick="DeleteAccount">Elimina il mio account</button>
+</div>
+
+<p class="small muted center">Grimorio del Master · versione @AppInfo.Current.VersionString (@AppInfo.Current.BuildString)</p>
+
+@code {
+    private bool _busy;
+
+    protected override void OnInitialized() => Ui.SetTitle("☰ Altro");
+
+    private void SwitchCampaign()
+    {
+        AppSession.CampaignId = 0;
+        Store.ForgetCampaign();
+        Nav.NavigateTo("campagne");
+    }
+
+    private async Task Logout()
+    {
+        if (!await Device.ConfirmAsync("Esci", "Vuoi uscire dall'account su questo telefono?")) return;
+        Store.ForgetCampaign();
+        AppSession.CampaignId = 0;
+        SupabaseService.SignOut();
+        Nav.NavigateTo("login", replace: true);
+    }
+
+    private async Task DeleteAccount()
+    {
+        if (!await Device.ConfirmAsync("Elimina account",
+                "Vuoi davvero eliminare il tuo account? Perderai l'accesso a tutte le campagne. Non si può annullare.",
+                "Continua")) return;
+
+        var typed = await Device.PromptAsync("Conferma", "Per confermare scrivi ELIMINA");
+        if (!string.Equals(typed?.Trim(), "ELIMINA", StringComparison.OrdinalIgnoreCase)) return;
+
+        _busy = true;
+        var (ok, error) = await SupabaseService.DeleteAccountAsync();
+        _busy = false;
+        if (!ok) { Ui.ShowToast("Eliminazione non riuscita: " + error, true); return; }
+
+        Store.ForgetCampaign();
+        AppSession.CampaignId = 0;
+        await Device.AlertAsync("Account eliminato", "Il tuo account è stato eliminato.");
+        Nav.NavigateTo("login", replace: true);
+    }
+}

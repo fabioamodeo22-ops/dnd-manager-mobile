@@ -1,0 +1,66 @@
+@page "/storia"
+@inject UiState Ui
+
+@if (!AppSession.IsMaster)
+{
+    <Empty Icon="📖">La storia della campagna è riservata al Master.</Empty>
+}
+else if (_loading)
+{
+    <Loading />
+}
+else if (_campaign != null)
+{
+    <div class="card parchment">
+        <h3 style="margin-top:0">📖 Diario della campagna</h3>
+        <textarea class="tall" @bind="_campaign.Story" placeholder="Scrivi qui la storia della campagna…"></textarea>
+        <div class="btn-row"><button class="btn" disabled="@_busy" @onclick="Save">💾 Salva storia</button></div>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0">💡 Spunto narrativo</h3>
+        <p class="small muted">Blocco creativo? Genera un paio di spunti (complicazioni, colpi di scena, dilemmi…). Funziona offline.</p>
+        <input type="text" @bind="_request" placeholder="Es. un colpo di scena, un dilemma morale…" />
+        <button class="btn ghost block mt" @onclick="Generate">🎲 Genera spunto</button>
+        @if (!string.IsNullOrEmpty(_suggestion))
+        {
+            <div class="card parchment mt"><p class="pre small" style="margin:0">@_suggestion</p></div>
+            <button class="btn block" @onclick="Append">➕ Aggiungi alla storia</button>
+        }
+    </div>
+}
+
+@code {
+    private Campaign? _campaign;
+    private bool _loading = true, _busy;
+    private string _request = "", _suggestion = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("📖 Storia");
+        if (!AppSession.IsMaster) return;
+        try { _campaign = await RemoteCampaign.GetCurrentAsync(); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private void Generate() => _suggestion = StoryPromptService.Generate(_request, AppSession.CampaignName).Trim();
+
+    private async Task Append()
+    {
+        if (_campaign == null || string.IsNullOrEmpty(_suggestion)) return;
+        var sep = string.IsNullOrWhiteSpace(_campaign.Story) ? "" : "\n\n---\n";
+        _campaign.Story += $"{sep}[Spunto narrativo - {DateTime.Now:dd/MM/yyyy HH:mm}]\n{_suggestion}";
+        _suggestion = "";
+        await Save();
+    }
+
+    private async Task Save()
+    {
+        if (_campaign == null) return;
+        _busy = true;
+        try { await RemoteCampaign.SaveAsync(_campaign); Ui.ShowToast("Storia salvata ✓"); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+}

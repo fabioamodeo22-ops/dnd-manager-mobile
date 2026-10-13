@@ -1,0 +1,18 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject UiState Ui
+
+<main class="page bare no-nav">
+    @Body
+</main>
+
+@if (Ui.Toast != null)
+{
+    <div class="toast @(Ui.ToastIsError ? "err" : "")" style="bottom: calc(var(--safe-bottom) + 18px)">@Ui.Toast</div>
+}
+
+@code {
+    protected override void OnInitialized() => Ui.Changed += OnChanged;
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Ui.Changed -= OnChanged;
+}

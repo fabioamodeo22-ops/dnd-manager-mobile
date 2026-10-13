@@ -1,0 +1,83 @@
+name: iOS
+
+# I minuti macOS costano 10x nei repo privati: questa pipeline parte solo a mano (Actions -> iOS -> Run workflow)
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Firma e carica su TestFlight (richiede i secrets Apple)'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      PROJECT: src/DnDManager.Mobile/DnDManager.Mobile.csproj
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Seleziona l'Xcode 26 più recente
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1); fi
+          echo "Uso $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Installa workload MAUI iOS
+        run: dotnet workload install maui-ios
+
+      - name: Build di verifica (simulatore, senza firma)
+        if: ${{ !inputs.upload }}
+        run: dotnet build $PROJECT -f net10.0-ios -c Debug -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
+
+      - name: Importa certificato di distribuzione
+        if: ${{ inputs.upload }}
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_P12_BASE64 }}
+          p12-password: ${{ secrets.IOS_P12_PASSWORD }}
+
+      - name: Scarica provisioning profile App Store
+        if: ${{ inputs.upload }}
+        uses: apple-actions/download-provisioning-profiles@v4
+        with:
+          bundle-id: com.fabioamodeo.dndmanager
+          profile-type: IOS_APP_STORE
+          issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+
+      - name: Publish IPA firmato
+        if: ${{ inputs.upload }}
+        run: |
+          dotnet publish $PROJECT -f net10.0-ios -c Release \
+            -p:RuntimeIdentifier=ios-arm64 \
+            -p:ArchiveOnBuild=true \
+            -p:CodesignKey="Apple Distribution" \
+            -p:ApplicationVersion=${{ github.run_number }} \
+            -p:ValidateXcodeVersion=false \
+            -o out
+          IPA=$(ls out/*.ipa | head -1)
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
+
+      - name: Carica su TestFlight
+        if: ${{ inputs.upload }}
+        uses: apple-actions/upload-testflight-build@v3
+        with:
+          app-path: ${{ env.IPA }}
+          issuer-id: ${{ secrets.APPSTORE_ISSUER_ID }}
+          api-key-id: ${{ secrets.APPSTORE_KEY_ID }}
+          api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.upload }}
+        with:
+          name: ios-${{ github.run_number }}
+          path: out/*.ipa

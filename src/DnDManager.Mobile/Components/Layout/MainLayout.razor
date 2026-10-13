@@ -1,0 +1,85 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject UiState Ui
+@inject NavigationManager Nav
+
+@if (!_ready)
+{
+    <div class="boot"><div class="boot-die">⬢</div></div>
+}
+else
+{
+    <header class="topbar">
+        @if (ShowBack)
+        {
+            <button class="icon-btn" aria-label="Indietro" @onclick="Back">‹</button>
+        }
+        <div class="title">
+            <div class="t1">@Ui.Title</div>
+            <div class="t2">@(AppSession.IsMaster ? "🛡️ Master" : "🎲 Giocatore") · @AppSession.CampaignName</div>
+        </div>
+        <NavLink class="icon-btn" href="dadi" aria-label="Dadi">🎲</NavLink>
+    </header>
+
+    <main class="page">
+        @Body
+    </main>
+
+    <nav class="bottomnav">
+        <NavLink href="home" Match="NavLinkMatch.All"><span class="ico">🏰</span>Campagna</NavLink>
+        <NavLink href="personaggi"><span class="ico">🧙</span>Personaggi</NavLink>
+        <NavLink href="missioni"><span class="ico">🧭</span>Missioni</NavLink>
+        <NavLink href="battaglia"><span class="ico">⚔️</span>Battaglia</NavLink>
+        <NavLink href="altro"><span class="ico">☰</span>Altro</NavLink>
+    </nav>
+
+    @if (Ui.Toast != null)
+    {
+        <div class="toast @(Ui.ToastIsError ? "err" : "")">@Ui.Toast</div>
+    }
+}
+
+@code {
+    private bool _ready;
+
+    private bool ShowBack
+    {
+        get
+        {
+            var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Trim('/');
+            return path.Count(c => c == '/') >= 1 || path is "dadi" or "storia" or "note" or "file" or "manuali" or "incantesimi" or "trucchetti" or "equipaggiamento" or "account";
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Ui.Changed += OnChanged;
+        Nav.LocationChanged += OnLocationChanged;
+
+        // Le pagine con questo layout richiedono login + campagna scelta: altrimenti si torna all'avvio
+        if (!SupabaseService.IsSignedIn || AppSession.CampaignId == 0)
+        {
+            Nav.NavigateTo("", replace: true);
+            return;
+        }
+        _ready = true;
+    }
+
+    private void Back()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].Trim('/');
+        var slash = path.LastIndexOf('/');
+        if (slash > 0) Nav.NavigateTo(path[..slash]);
+        else if (path == "dadi") Nav.NavigateTo("home");
+        else Nav.NavigateTo("altro");
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    private void OnLocationChanged(object? s, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Ui.Changed -= OnChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

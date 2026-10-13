@@ -1,0 +1,8 @@
+<div class="hpbar @Css"><div style="width:@(Pct)%"></div></div>
+
+@code {
+    [Parameter] public int Current { get; set; }
+    [Parameter] public int Max { get; set; }
+    private int Pct => Max <= 0 ? 0 : Math.Clamp(Current * 100 / Max, 0, 100);
+    private string Css => Pct <= 25 ? "low" : Pct <= 60 ? "mid" : "";
+}

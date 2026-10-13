@@ -1,0 +1,79 @@
+@page "/equipaggiamento"
+@inject UiState Ui
+@inject NavigationManager Nav
+
+<div class="segments">
+    <button class="@(!_mineOnly ? "on" : "")" @onclick="() => _mineOnly = false">Tutto</button>
+    <button class="@(_mineOnly ? "on" : "")" @onclick="() => _mineOnly = true">👤 Solo il mio</button>
+</div>
+
+<input type="search" placeholder="Cerca per nome o tipo…" @bind="_query" @bind:event="oninput" />
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (!Visible.Any())
+{
+    <Empty Icon="🎒">Nessun oggetto.</Empty>
+}
+else
+{
+    <div class="list mt">
+        @foreach (var e in Visible)
+        {
+            <a class="row" href="@($"equipaggiamento/{e.Id}")">
+                @if (!string.IsNullOrEmpty(e.ImagePath)) { <img class="avatar" src="@e.ImagePath" alt="" /> }
+                else { <div class="avatar">🎒</div> }
+                <div class="grow">
+                    <div class="name">@e.Name</div>
+                    <div class="sub">@e.Type @(string.IsNullOrEmpty(e.Cost) ? "" : "· " + e.Cost) @(e.AssignedNames.Count > 0 ? "· → " + string.Join(", ", e.AssignedNames) : "")</div>
+                </div>
+                <span class="chev">›</span>
+            </a>
+        }
+    </div>
+}
+
+@if (AppSession.IsMaster)
+{
+    <button class="fab" aria-label="Nuovo oggetto" disabled="@_busy" @onclick="Create">+</button>
+}
+
+@code {
+    private List<Equipment> _all = new();
+    private HashSet<string> _myNames = new(StringComparer.OrdinalIgnoreCase);
+    private bool _loading = true, _busy, _mineOnly;
+    private string _query = "";
+
+    private IEnumerable<Equipment> Visible => _all
+        .Where(e => !_mineOnly || e.AssignedNames.Any(_myNames.Contains))
+        .Where(e => string.IsNullOrWhiteSpace(_query) ||
+                    e.Name.Contains(_query, StringComparison.OrdinalIgnoreCase) ||
+                    e.Type.Contains(_query, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("🎒 Equipaggiamento");
+        try
+        {
+            _all = await RemoteEquipment.GetAllAsync();
+            var chars = await RemoteCharacters.GetAllAsync();
+            _myNames = chars.Where(c => c.OwnerId == AppSession.UserId).Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Create()
+    {
+        _busy = true;
+        try
+        {
+            var id = await RemoteEquipment.SaveAsync(new Equipment { Name = "Nuovo oggetto" });
+            if (id > 0) Nav.NavigateTo($"equipaggiamento/{id}");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,93 @@
+@page "/missioni"
+@inject UiState Ui
+@inject NavigationManager Nav
+
+<div class="segments">
+    @foreach (var f in Filters)
+    {
+        <button class="@(_filter == f.Key ? "on" : "")" @onclick="() => _filter = f.Key">@f.Label</button>
+    }
+</div>
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (!Visible.Any())
+{
+    <Empty Icon="🧭">Nessuna missione da mostrare.</Empty>
+}
+else
+{
+    <div class="list">
+        @foreach (var q in Visible)
+        {
+            <a class="row" href="@($"missioni/{q.Id}")">
+                <div class="avatar" style="font-size:1.3rem">@(q.IsLocked ? "🔒" : CharacterRules.QuestIcon(q.Status))</div>
+                <div class="grow">
+                    <div class="name">@q.Title</div>
+                    <div class="sub">@q.Status@(string.IsNullOrWhiteSpace(q.Description) ? "" : " · " + FirstLine(q.Description))</div>
+                </div>
+                <span class="chev">›</span>
+            </a>
+        }
+    </div>
+}
+
+@if (AppSession.IsMaster)
+{
+    <button class="fab" aria-label="Nuova missione" disabled="@_busy" @onclick="Create">+</button>
+}
+
+@code {
+    private List<Quest> _all = new();
+    private bool _loading = true, _busy;
+    private string _filter = "";
+
+    private IEnumerable<(string Key, string Label)> Filters =>
+        AppSession.IsMaster
+            ? new[] { ("", "Tutte"), ("In corso", "🕓 In corso"), ("Pianificata", "📋 Pianificate"), ("Completata", "✅ Completate"), ("Fallita", "❌ Fallite"), ("locked", "🔒 Bloccate") }
+            : new[] { ("", "🕓 In corso") };
+
+    private IEnumerable<Quest> Visible
+    {
+        get
+        {
+            // Come nella versione PC: il Giocatore vede solo le missioni in corso e non bloccate
+            var source = AppSession.IsMaster ? _all : _all.Where(q => !q.IsLocked && q.Status == "In corso");
+            return _filter switch
+            {
+                "" => source,
+                "locked" => source.Where(q => q.IsLocked),
+                _ => source.Where(q => q.Status == _filter)
+            };
+        }
+    }
+
+    private static string FirstLine(string s)
+    {
+        var line = s.Split('\n')[0].Trim();
+        return line.Length > 60 ? line[..60] + "…" : line;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("🧭 Missioni");
+        _loading = true;
+        try { _all = await RemoteQuests.GetAllAsync(); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Create()
+    {
+        _busy = true;
+        try
+        {
+            var id = await RemoteQuests.SaveAsync(new Quest { Title = "Nuova missione", Status = "Pianificata" });
+            if (id > 0) Nav.NavigateTo($"missioni/{id}");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+}

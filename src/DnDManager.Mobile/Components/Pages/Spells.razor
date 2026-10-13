@@ -1,0 +1,88 @@
+@page "/incantesimi"
+@page "/trucchetti"
+@inject UiState Ui
+@inject NavigationManager Nav
+
+<div class="segments">
+    <button class="@(!Cantrips ? "on" : "")" @onclick='() => Nav.NavigateTo("incantesimi")'>✨ Incantesimi</button>
+    <button class="@(Cantrips ? "on" : "")" @onclick='() => Nav.NavigateTo("trucchetti")'>🔹 Trucchetti</button>
+    <button class="@(_mineOnly ? "on" : "")" @onclick="() => _mineOnly = !_mineOnly">👤 Solo i miei</button>
+</div>
+
+<input type="search" placeholder="Cerca per nome, scuola o classe…" @bind="_query" @bind:event="oninput" />
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (!Visible.Any())
+{
+    <Empty Icon="✨">Nessun risultato.</Empty>
+}
+else
+{
+    <div class="list mt">
+        @foreach (var s in Visible)
+        {
+            <a class="row" href="@($"incantesimi/{s.Id}")">
+                @if (!string.IsNullOrEmpty(s.ImagePath)) { <img class="avatar" src="@s.ImagePath" alt="" /> }
+                else { <div class="avatar">@(s.IsCantrip ? "🔹" : s.Level.ToString())</div> }
+                <div class="grow">
+                    <div class="name">@s.Name</div>
+                    <div class="sub">@(s.IsCantrip ? "Trucchetto" : $"Liv. {s.Level}") · @s.School @(s.AssignedNames.Count > 0 ? "· → " + string.Join(", ", s.AssignedNames) : "")</div>
+                </div>
+                <span class="chev">›</span>
+            </a>
+        }
+    </div>
+}
+
+@if (AppSession.IsMaster)
+{
+    <button class="fab" aria-label="Nuovo" disabled="@_busy" @onclick="Create">+</button>
+}
+
+@code {
+    private List<Spell> _all = new();
+    private HashSet<string> _myNames = new(StringComparer.OrdinalIgnoreCase);
+    private bool _loading = true, _busy, _mineOnly;
+    private string _query = "";
+    private bool? _loadedFor;
+
+    private bool Cantrips => Nav.ToBaseRelativePath(Nav.Uri).StartsWith("trucchetti");
+
+    private IEnumerable<Spell> Visible => _all
+        .Where(s => !_mineOnly || s.AssignedNames.Any(_myNames.Contains))
+        .Where(s => string.IsNullOrWhiteSpace(_query) ||
+                    s.Name.Contains(_query, StringComparison.OrdinalIgnoreCase) ||
+                    s.School.Contains(_query, StringComparison.OrdinalIgnoreCase) ||
+                    s.Classes.Contains(_query, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Ui.SetTitle(Cantrips ? "🔹 Trucchetti" : "✨ Incantesimi");
+        if (_loadedFor == Cantrips) return;
+        _loadedFor = Cantrips;
+        _loading = true;
+        try
+        {
+            _all = await RemoteSpells.GetAllAsync(cantripsOnly: Cantrips);
+            var chars = await RemoteCharacters.GetAllAsync();
+            _myNames = chars.Where(c => c.OwnerId == AppSession.UserId).Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Create()
+    {
+        _busy = true;
+        try
+        {
+            var id = await RemoteSpells.SaveAsync(new Spell { Name = Cantrips ? "Nuovo trucchetto" : "Nuovo incantesimo", Level = Cantrips ? 0 : 1 });
+            if (id > 0) Nav.NavigateTo($"incantesimi/{id}");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+}

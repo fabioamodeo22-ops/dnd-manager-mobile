@@ -1,0 +1,15 @@
+@if (!string.IsNullOrEmpty(Url))
+{
+    <img class="avatar @(Large ? "lg" : "")" src="@Url" alt="" />
+}
+else
+{
+    <div class="avatar @(Large ? "lg" : "")">@Initial</div>
+}
+
+@code {
+    [Parameter] public string? Url { get; set; }
+    [Parameter] public string? Name { get; set; }
+    [Parameter] public bool Large { get; set; }
+    private string Initial => string.IsNullOrWhiteSpace(Name) ? "?" : Name.Trim()[..1].ToUpperInvariant();
+}

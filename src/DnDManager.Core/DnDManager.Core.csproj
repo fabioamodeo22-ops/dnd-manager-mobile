@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Logica condivisa (accesso a Supabase, modelli, regole D&D). Nessuna dipendenza da WPF o MAUI:
+    net8.0 permette in futuro di referenziarla anche dalla app WPF esistente.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>DnDManager</RootNamespace>
+    <AssemblyName>DnDManager.Core</AssemblyName>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+</Project>

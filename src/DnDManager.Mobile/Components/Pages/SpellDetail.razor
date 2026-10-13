@@ -1,0 +1,150 @@
+@page "/incantesimi/{Id:long}"
+@inject UiState Ui
+@inject NavigationManager Nav
+@inject DeviceActions Device
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_s == null)
+{
+    <Empty Icon="✨">Incantesimo non trovato.</Empty>
+}
+else if (!AppSession.IsMaster)
+{
+    <div class="card parchment">
+        @if (!string.IsNullOrEmpty(_s.ImagePath)) { <img src="@_s.ImagePath" alt="" style="width:72px; height:72px; border-radius:12px; float:right; object-fit:cover" /> }
+        <h2 style="margin-top:0">@_s.Name</h2>
+        <div class="small muted">@(_s.Level == 0 ? "Trucchetto" : $"Livello {_s.Level}") · @_s.School</div>
+        <div class="statline"><span>Tempo di lancio</span><span>@_s.CastingTime</span></div>
+        <div class="statline"><span>Gittata</span><span>@_s.Range</span></div>
+        <div class="statline"><span>Componenti</span><span>@_s.Components</span></div>
+        <div class="statline"><span>Durata</span><span>@_s.Duration</span></div>
+        <div class="statline"><span>Classi</span><span>@_s.Classes</span></div>
+        <p class="pre mt">@_s.Description</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <label>Nome</label>
+        <input type="text" @bind="_s.Name" />
+        <div class="grid2">
+            <div><label>Livello (0 = trucchetto)</label><input type="number" min="0" max="9" @bind="_s.Level" /></div>
+            <div><label>Scuola</label><input type="text" @bind="_s.School" /></div>
+            <div><label>Tempo di lancio</label><input type="text" @bind="_s.CastingTime" /></div>
+            <div><label>Gittata</label><input type="text" @bind="_s.Range" /></div>
+            <div><label>Componenti</label><input type="text" @bind="_s.Components" /></div>
+            <div><label>Durata</label><input type="text" @bind="_s.Duration" /></div>
+        </div>
+        <label>Classi</label>
+        <input type="text" @bind="_s.Classes" />
+        <label>Descrizione</label>
+        <textarea class="tall" @bind="_s.Description"></textarea>
+        <button class="btn ghost block mt" @onclick="PickIcon">🖼 @(string.IsNullOrEmpty(_s.ImagePath) ? "Aggiungi icona" : "Cambia icona")</button>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0">Assegnato a</h3>
+        @foreach (var c in _chars)
+        {
+            <label class="check">
+                <input type="checkbox" checked="@_assigned.Contains(c.Id)" @onchange="e => Toggle(c.Id, e.Value)" />
+                @c.Name @if (c.IsNpc) {<span class="badge npc">NPC</span>}
+            </label>
+        }
+    </div>
+
+    <div class="btn-row"><button class="btn" disabled="@_busy" @onclick="Save">💾 Salva</button></div>
+    <div class="btn-row"><button class="btn danger small" disabled="@_busy" @onclick="Delete">🗑 Elimina</button></div>
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private Spell? _s;
+    private List<Character> _chars = new();
+    private HashSet<long> _assigned = new();
+    private bool _loading = true, _busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Ui.SetTitle("✨ Incantesimo");
+        _loading = true;
+        try
+        {
+            var rows = await SupabaseRest.GetAsync<DnDManager.Data.Remote.RestSpell>($"spells?id=eq.{Id}&select=*");
+            var r = rows.FirstOrDefault();
+            _s = r == null ? null : new Spell
+            {
+                Id = r.Id, Name = r.Name, Level = r.Level, School = r.School, Classes = r.Classes,
+                Components = r.Components, CastingTime = r.CastingTime, Range = r.Range,
+                Duration = r.Duration, Description = r.Description, ImagePath = r.ImageUrl
+            };
+            if (_s != null)
+            {
+                Ui.SetTitle((_s.Level == 0 ? "🔹 " : "✨ ") + _s.Name);
+                if (AppSession.IsMaster)
+                {
+                    _chars = (await RemoteCharacters.GetAllAsync()).OrderBy(c => c.IsNpc).ThenBy(c => c.Name).ToList();
+                    _assigned = (await RemoteSpells.GetAssignedCharacterIdsAsync(_s.Id)).ToHashSet();
+                }
+            }
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Toggle(long characterId, object? value)
+    {
+        if (_s == null) return;
+        try
+        {
+            if (value is true) { await RemoteSpells.AssignAsync(_s.Id, characterId); _assigned.Add(characterId); }
+            else { await RemoteSpells.UnassignAsync(_s.Id, characterId); _assigned.Remove(characterId); }
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    private async Task PickIcon()
+    {
+        if (_s == null) return;
+        try
+        {
+            var f = await Device.PickImageAsync();
+            if (f == null) return;
+            _s.ImagePath = await SupabaseStorage.UploadBytesAsync("spell-icons", f.FileName, f.Bytes);
+            await RemoteSpells.SaveAsync(_s);
+            Ui.ShowToast("Icona aggiornata ✓");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    private async Task Save()
+    {
+        if (_s == null) return;
+        _busy = true;
+        try
+        {
+            _s.Level = Math.Clamp(_s.Level, 0, 9);
+            await RemoteSpells.SaveAsync(_s);
+            Ui.ShowToast("Salvato ✓");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task Delete()
+    {
+        if (_s == null) return;
+        if (!await Device.ConfirmAsync("Elimina", $"Eliminare \"{_s.Name}\"?", "Elimina")) return;
+        try
+        {
+            var wasCantrip = _s.Level == 0;
+            await RemoteSpells.DeleteAsync(_s.Id);
+            Nav.NavigateTo(wasCantrip ? "trucchetti" : "incantesimi");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+}

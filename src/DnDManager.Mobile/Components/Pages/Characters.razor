@@ -1,0 +1,99 @@
+@page "/personaggi"
+@inject UiState Ui
+@inject NavigationManager Nav
+
+@if (AppSession.IsMaster)
+{
+    <div class="segments">
+        <button class="@(_filter == 0 ? "on" : "")" @onclick="() => _filter = 0">Tutti</button>
+        <button class="@(_filter == 1 ? "on" : "")" @onclick="() => _filter = 1">Giocatori</button>
+        <button class="@(_filter == 2 ? "on" : "")" @onclick="() => _filter = 2">🎭 NPC</button>
+    </div>
+}
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (!Visible.Any())
+{
+    <Empty Icon="🧙">
+        @(AppSession.IsMaster ? "Nessun personaggio in questa campagna." : "Non hai ancora un personaggio in questa campagna.")
+    </Empty>
+}
+else
+{
+    <div class="list">
+        @foreach (var c in Visible)
+        {
+            <a class="row" href="@($"personaggi/{c.Id}")">
+                <Avatar Url="@c.PortraitPath" Name="@c.Name" />
+                <div class="grow">
+                    <div class="name">@c.Name @if (c.IsNpc) {<span class="badge npc">NPC</span>}</div>
+                    <div class="sub">@c.Race @c.Class · liv. @c.Level @(AppSession.IsMaster && !string.IsNullOrEmpty(c.Owner) ? $"· 👤 {c.Owner}" : "")</div>
+                </div>
+                <span class="chev">›</span>
+            </a>
+        }
+    </div>
+}
+
+<div class="btn-row">
+    <button class="btn" disabled="@_busy" @onclick="() => Create(false)">+ Nuovo PG</button>
+    @if (AppSession.IsMaster)
+    {
+        <button class="btn ghost" disabled="@_busy" @onclick="() => Create(true)">+ Nuovo NPC</button>
+    }
+</div>
+
+@code {
+    private List<Character> _all = new();
+    private bool _loading = true, _busy;
+    private int _filter;
+
+    private IEnumerable<Character> Visible
+    {
+        get
+        {
+            if (!AppSession.IsMaster)
+                // Il Giocatore vede solo i propri personaggi (mai NPC, mai PG altrui): stessa regola della versione PC
+                return _all.Where(c => !c.IsNpc && (c.OwnerId == AppSession.UserId ||
+                    string.Equals(c.Owner, AppSession.UserName, StringComparison.OrdinalIgnoreCase)));
+            return _filter switch
+            {
+                1 => _all.Where(c => !c.IsNpc),
+                2 => _all.Where(c => c.IsNpc),
+                _ => _all
+            };
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("🧙 Personaggi");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _all = (await RemoteCharacters.GetAllAsync()).OrderBy(c => c.IsNpc).ThenBy(c => c.Name).ToList(); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Create(bool npc)
+    {
+        _busy = true;
+        try
+        {
+            var c = new Character { Name = npc ? "Nuovo NPC" : "Nuovo personaggio", IsNpc = npc && AppSession.IsMaster };
+            if (!AppSession.IsMaster) { c.Owner = AppSession.UserName; c.OwnerId = AppSession.UserId; }
+            var id = await RemoteCharacters.SaveAsync(c);
+            if (id > 0) Nav.NavigateTo($"personaggi/{id}?nuovo=1");
+            else await LoadAsync();
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+}

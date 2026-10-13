@@ -1,0 +1,37 @@
+@page "/note"
+@inject UiState Ui
+
+@if (_loading)
+{
+    <Loading />
+}
+else
+{
+    <div class="card parchment">
+        <h3 style="margin-top:0">📝 I miei appunti</h3>
+        <p class="small muted">Privati: li vedi solo tu, nemmeno il Master può leggerli.</p>
+        <textarea class="tall" @bind="_text" placeholder="Nomi, indizi, cose da ricordare…"></textarea>
+        <div class="btn-row"><button class="btn" disabled="@_busy" @onclick="Save">💾 Salva</button></div>
+    </div>
+}
+
+@code {
+    private string _text = "";
+    private bool _loading = true, _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("📝 Appunti");
+        try { _text = await RemoteNotes.GetMyNoteAsync(); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Save()
+    {
+        _busy = true;
+        try { await RemoteNotes.SaveMyNoteAsync(_text); Ui.ShowToast("Salvato ✓ (visibile solo a te)"); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+}

@@ -1,0 +1,108 @@
+@page "/file"
+@inject UiState Ui
+@inject DeviceActions Device
+
+<p class="small muted">
+    @(AppSession.IsMaster ? "Tutti i file caricati per questa campagna." : "I file che hai caricato per questa campagna.")
+    Tocca un file per aprirlo.
+</p>
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_files.Count == 0)
+{
+    <Empty Icon="📁">Nessun file caricato.</Empty>
+}
+else
+{
+    <div class="list">
+        @foreach (var f in _files)
+        {
+            <div class="row" style="flex-wrap:wrap">
+                <div class="avatar">@Icon(f.FileType)</div>
+                <div class="grow" @onclick="() => Toggle(f)">
+                    <div class="name">@f.FileName</div>
+                    <div class="sub">@f.FileType @(AppSession.IsMaster && !string.IsNullOrEmpty(f.OwnerUsername) ? "· 👤 " + f.OwnerUsername : "")</div>
+                </div>
+                @if (f.OwnerId == AppSession.UserId || AppSession.IsMaster)
+                {
+                    <button class="icon-btn" aria-label="Elimina" @onclick="() => Delete(f)">🗑</button>
+                }
+                @if (_open == f.Id)
+                {
+                    <div style="flex-basis:100%">
+                        @if (f.FileType == "image")
+                        {
+                            <img class="media-img" src="@f.FileUrl" alt="@f.FileName" />
+                        }
+                        else if (f.FileType == "audio")
+                        {
+                            <audio controls src="@f.FileUrl"></audio>
+                        }
+                        <button class="btn ghost small block mt" @onclick="() => Device.OpenUrlAsync(f.FileUrl)">↗ Apri con un'altra app</button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+<button class="fab" aria-label="Carica file" disabled="@_busy" @onclick="Upload">⇪</button>
+
+@code {
+    private List<SharedFile> _files = new();
+    private bool _loading = true, _busy;
+    private long _open;
+
+    private static string Icon(string type) => type switch
+    {
+        "audio" => "🎵", "image" => "🖼", "pdf" => "📕", "word" => "📄", _ => "📎"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("📁 File");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try { _files = await RemoteSharedFiles.GetAllAsync(); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Toggle(SharedFile f)
+    {
+        // immagini e audio si vedono/ascoltano qui; PDF e documenti si aprono con l'app predefinita
+        if (f.FileType is "image" or "audio") _open = _open == f.Id ? 0 : f.Id;
+        else await Device.OpenUrlAsync(f.FileUrl);
+    }
+
+    private async Task Upload()
+    {
+        try
+        {
+            var file = await Device.PickAnyFileAsync();
+            if (file == null) return;
+            if (file.Bytes.Length > 50 * 1024 * 1024) { Ui.ShowToast("File troppo grande (max 50 MB).", true); return; }
+            _busy = true;
+            Ui.ShowToast("Caricamento in corso…");
+            await RemoteSharedFiles.UploadBytesAsync(file.FileName, file.Bytes);
+            Ui.ShowToast("File caricato ✓");
+            await LoadAsync();
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task Delete(SharedFile f)
+    {
+        if (!await Device.ConfirmAsync("Elimina", $"Eliminare \"{f.FileName}\"?", "Elimina")) return;
+        try { await RemoteSharedFiles.DeleteAsync(f.Id); await LoadAsync(); }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+}

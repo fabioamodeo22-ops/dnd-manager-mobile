@@ -1,0 +1,449 @@
+@page "/battaglia"
+@implements IDisposable
+@inject UiState Ui
+@inject DeviceActions Device
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_state == null)
+{
+    <Empty Icon="⚔️">Il Master non ha ancora preparato una battaglia per questa campagna.</Empty>
+}
+else
+{
+    @if (AppSession.IsMaster)
+    {
+        <div class="segments">
+            <button class="@(_tool == Tool.Move ? "on" : "")" @onclick="() => _tool = Tool.Move">✋ Muovi</button>
+            <button class="@(_tool == Tool.Fog ? "on" : "")" @onclick="() => _tool = Tool.Fog">🌫 Nebbia</button>
+            <button class="@(_tool == Tool.Reveal ? "on" : "")" @onclick="() => _tool = Tool.Reveal">🔦 Rivela</button>
+            <button class="@(_tool == Tool.Wall ? "on" : "")" @onclick="() => _tool = Tool.Wall">🧱 Muro</button>
+            <button class="@(_tool == Tool.Erase ? "on" : "")" @onclick="() => _tool = Tool.Erase">🧽 Gomma</button>
+        </div>
+    }
+
+    <div class="zoom">
+        <button class="btn small ghost" @onclick="() => Zoom(-6)">−</button>
+        <span class="small muted" style="flex:1; text-align:center">@HintText</span>
+        <button class="btn small ghost" @onclick="() => Zoom(6)">+</button>
+    </div>
+
+    <div class="battle-wrap" id="battle-wrap">
+        <div class="battle-grid"
+             style="width:@(Cols * _cell)px; height:@(Rows * _cell)px; @MapStyle"
+             @onclick="OnGridClick">
+
+            <!-- linee della griglia -->
+            <div style="position:absolute; inset:0; pointer-events:none;
+                        background-image: linear-gradient(rgba(255,255,255,.09) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.09) 1px, transparent 1px);
+                        background-size: @(_cell)px @(_cell)px;"></div>
+
+            @for (int y = 0; y < Rows; y++)
+            {
+                for (int x = 0; x < Cols; x++)
+                {
+                    var wall = _walls[y, x];
+                    var fog = _fog[y, x];
+                    if (!wall && !fog) continue;
+                    <div class="cell @(wall ? "wall" : "") @(fog ? (AppSession.IsMaster ? "fog gm" : "fog") : "")"
+                         style="left:@(x * _cell)px; top:@(y * _cell)px; width:@(_cell)px; height:@(_cell)px; pointer-events:none"></div>
+                }
+            }
+
+            @foreach (var c in VisibleTokens)
+            {
+                var size = _cell - 4;
+                <div class="token @(c.IsCurrent ? "current" : "") @(IsMine(c) ? "mine" : "") @(_selectedId == c.Id ? "selected" : "")"
+                     style="left:@(c.GridX * _cell + 2)px; top:@(c.GridY * _cell + 2)px; width:@(size)px; height:@(size)px; font-size:@(size * 0.45)px; @TokenBackground(c)"
+                     title="@c.Name"
+                     @onclick="() => OnTokenClick(c)" @onclick:stopPropagation="true">
+                    @if (string.IsNullOrEmpty(c.PortraitPath))
+                    {
+                        <text>@(string.IsNullOrWhiteSpace(c.Name) ? "?" : c.Name.Trim()[..1].ToUpperInvariant())</text>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (AppSession.IsMaster && _tool != Tool.Move)
+    {
+        <div class="btn-row">
+            <button class="btn small ghost" @onclick="() => FillFog(true)">🌫 Copri tutto</button>
+            <button class="btn small ghost" @onclick="() => FillFog(false)">🔦 Rivela tutto</button>
+        </div>
+    }
+
+    <h2>⚔️ Iniziativa</h2>
+    @if (_combatants.Count == 0)
+    {
+        <p class="muted small">Nessun combattente.</p>
+    }
+    @foreach (var c in _combatants.OrderByDescending(x => x.Initiative))
+    {
+        <div class="init-row @(c.IsCurrent ? "current" : "")">
+            <div class="ini">@c.Initiative</div>
+            <div style="flex:1; min-width:0" @onclick="() => OnTokenClick(c)">
+                <div style="font-weight:600">@(c.IsCurrent ? "▶ " : "")@c.Name</div>
+                @if (AppSession.IsMaster || IsMine(c))
+                {
+                    <div class="small muted">PF @c.Hp</div>
+                }
+            </div>
+            @if (AppSession.IsMaster)
+            {
+                <button class="icon-btn" style="width:34px; height:34px" @onclick="() => ChangeHp(c, -1)">−</button>
+                <button class="icon-btn" style="width:34px; height:34px" @onclick="() => ChangeHp(c, 1)">+</button>
+                <button class="icon-btn" style="width:34px; height:34px" @onclick="() => Remove(c)">✕</button>
+            }
+        </div>
+    }
+
+    @if (AppSession.IsMaster)
+    {
+        <div class="btn-row">
+            <button class="btn" @onclick="NextTurn">⏭ Turno successivo</button>
+        </div>
+
+        <div class="card mt">
+            <h3 style="margin-top:0">Aggiungi combattente</h3>
+            <label>Da personaggio (facoltativo)</label>
+            <select @bind="SelectedCharId">
+                <option value="0">— combattente libero —</option>
+                @foreach (var ch in _characters)
+                {
+                    <option value="@ch.Id">@(ch.IsNpc ? "🎭 " : "")@ch.Name</option>
+                }
+            </select>
+            <label>Nome</label>
+            <input type="text" @bind="_newName" />
+            <div class="grid2">
+                <div>
+                    <label>Iniziativa</label>
+                    <div style="display:flex; gap:6px">
+                        <input type="number" @bind="_newInit" />
+                        <button class="btn small ghost" @onclick="RollInit">🎲</button>
+                    </div>
+                </div>
+                <div><label>PF</label><input type="number" @bind="_newHp" /></div>
+            </div>
+            <button class="btn block mt" @onclick="Add">+ Aggiungi</button>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0">Mappa e griglia</h3>
+            <div class="grid2">
+                <div><label>Colonne</label><input type="number" min="4" max="60" @bind="_editCols" /></div>
+                <div><label>Righe</label><input type="number" min="4" max="60" @bind="_editRows" /></div>
+            </div>
+            <div class="btn-row">
+                <button class="btn small ghost" @onclick="ApplySize">Applica dimensioni</button>
+                <button class="btn small ghost" @onclick="PickMap">🗺 Carica mappa</button>
+            </div>
+            <div class="btn-row">
+                <button class="btn small danger" @onclick="Reset">Termina combattimento</button>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private enum Tool { Move, Fog, Reveal, Wall, Erase }
+
+    private DnDManager.Data.Remote.RestBattleState? _state;
+    private bool[,] _walls = new bool[1, 1];
+    private bool[,] _fog = new bool[1, 1];
+    private List<Combatant> _combatants = new();
+    private List<Character> _characters = new();
+    private HashSet<long> _ownedCharacterIds = new();
+    private bool _loading = true;
+    private int _cell = 34;
+    private Tool _tool = Tool.Move;
+    private long? _selectedId;
+    private int _pendingOps;
+    private CancellationTokenSource? _pollCts;
+
+    // form nuovo combattente / dimensioni
+    private long _newCharId;
+    private string _newName = "";
+    private int _newInit, _newHp, _editCols, _editRows;
+
+    private int Cols => Math.Max(1, _state?.Cols ?? 1);
+    private int Rows => Math.Max(1, _state?.Rows ?? 1);
+
+    private string MapStyle => string.IsNullOrEmpty(_state?.MapUrl)
+        ? "background-color:#2a2219;"
+        : $"background-image:url('{_state!.MapUrl}'); background-size:{Cols * _cell}px {Rows * _cell}px;";
+
+    private string HintText => _tool switch
+    {
+        Tool.Fog => "Tocca le celle da coprire",
+        Tool.Reveal => "Tocca le celle da rivelare",
+        Tool.Wall => "Tocca le celle per i muri",
+        Tool.Erase => "Tocca per togliere i muri",
+        _ => _selectedId.HasValue ? "Tocca una cella per spostare" : "Tocca un tuo token per selezionarlo"
+    };
+
+    private IEnumerable<Combatant> VisibleTokens => _combatants.Where(c =>
+        c.GridX >= 0 && c.GridY >= 0 && c.GridX < Cols && c.GridY < Rows &&
+        (AppSession.IsMaster || IsMine(c) || !_fog[c.GridY, c.GridX]));
+
+    private long SelectedCharId
+    {
+        get => _newCharId;
+        set
+        {
+            _newCharId = value;
+            var ch = _characters.FirstOrDefault(c => c.Id == value);
+            if (ch != null)
+            {
+                _newName = ch.Name;
+                _newHp = ch.HpCurrent > 0 ? ch.HpCurrent : ch.HpMax;
+            }
+        }
+    }
+
+    private bool IsMine(Combatant c) => c.CharacterId.HasValue && _ownedCharacterIds.Contains(c.CharacterId.Value);
+    private bool CanMove(Combatant c) => AppSession.IsMaster || IsMine(c);
+
+    private static string TokenBackground(Combatant c)
+    {
+        if (!string.IsNullOrEmpty(c.PortraitPath)) return $"background-image:url('{c.PortraitPath}');";
+        string[] colors = { "#8e3b2f", "#2f5d8e", "#3f7d3a", "#7a4f9a", "#a0702a", "#2f7d7d", "#8e2f6b", "#5a5a5a" };
+        var hash = 0;
+        foreach (var ch in c.Name ?? "") hash = unchecked(hash * 31 + ch);
+        return $"background-color:{colors[Math.Abs(hash % colors.Length)]};";
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("⚔️ Battaglia");
+        try
+        {
+            if (AppSession.IsMaster) _state = await RemoteBattle.EnsureStateAsync();
+            else
+            {
+                var rows = await SupabaseRest.GetAsync<DnDManager.Data.Remote.RestBattleState>(
+                    $"battle_state?campaign_id=eq.{AppSession.CampaignId}&select=*");
+                _state = rows.FirstOrDefault();
+            }
+            if (_state != null) ApplyState(_state);
+
+            _characters = (await RemoteCharacters.GetAllAsync()).OrderBy(c => c.IsNpc).ThenBy(c => c.Name).ToList();
+            _ownedCharacterIds = _characters.Where(c => !c.IsNpc && c.OwnerId == AppSession.UserId).Select(c => c.Id).ToHashSet();
+            _combatants = await RemoteBattle.GetCombatantsAsync();
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+
+        StartPolling();
+    }
+
+    private void ApplyState(DnDManager.Data.Remote.RestBattleState s)
+    {
+        _state = s;
+        _walls = RemoteBattle.DeserializeGrid(s.WallsJson, Math.Max(1, s.Rows), Math.Max(1, s.Cols));
+        _fog = RemoteBattle.DeserializeGrid(s.FogJson, Math.Max(1, s.Rows), Math.Max(1, s.Cols));
+        _editCols = s.Cols;
+        _editRows = s.Rows;
+    }
+
+    // ---------------- sincronizzazione (polling ogni 2 secondi, come la versione PC) ----------------
+    private void StartPolling()
+    {
+        _pollCts = new CancellationTokenSource();
+        var token = _pollCts.Token;
+        _ = Task.Run(async () =>
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+            while (!token.IsCancellationRequested)
+            {
+                try { if (!await timer.WaitForNextTickAsync(token)) break; }
+                catch (OperationCanceledException) { break; }
+                if (_pendingOps > 0) continue; // non sovrascrivere un'azione locale ancora in invio
+                try
+                {
+                    var rows = await SupabaseRest.GetAsync<DnDManager.Data.Remote.RestBattleState>(
+                        $"battle_state?campaign_id=eq.{AppSession.CampaignId}&select=*");
+                    var combatants = await RemoteBattle.GetCombatantsAsync();
+                    if (_pendingOps > 0 || token.IsCancellationRequested) continue;
+
+                    await InvokeAsync(() =>
+                    {
+                        var s = rows.FirstOrDefault();
+                        if (s != null) ApplyState(s);
+                        _combatants = combatants;
+                        StateHasChanged();
+                    });
+                }
+                catch { /* rete assente: si riprova al prossimo giro */ }
+            }
+        }, token);
+    }
+
+    private async Task Run(Func<Task> op)
+    {
+        Interlocked.Increment(ref _pendingOps);
+        try { await op(); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { Interlocked.Decrement(ref _pendingOps); }
+    }
+
+    // ---------------- interazione con la griglia ----------------
+    private void Zoom(int delta) => _cell = Math.Clamp(_cell + delta, 20, 72);
+
+    private void OnTokenClick(Combatant c)
+    {
+        if (_tool != Tool.Move) return;
+        if (!CanMove(c)) { Ui.ShowToast($"{c.Name}: puoi muovere solo i tuoi token."); return; }
+        _selectedId = _selectedId == c.Id ? null : c.Id;
+    }
+
+    private async Task OnGridClick(MouseEventArgs e)
+    {
+        int x = (int)(e.OffsetX / _cell), y = (int)(e.OffsetY / _cell);
+        if (x < 0 || y < 0 || x >= Cols || y >= Rows) return;
+
+        if (_tool == Tool.Move)
+        {
+            var c = _combatants.FirstOrDefault(t => t.Id == _selectedId);
+            if (c == null) return;
+            c.GridX = x; c.GridY = y;
+            _selectedId = null;
+            await Run(() => RemoteBattle.UpdatePositionAsync(c.Id, x, y));
+            return;
+        }
+
+        if (!AppSession.IsMaster) return;
+        switch (_tool)
+        {
+            case Tool.Fog: _fog[y, x] = true; break;
+            case Tool.Reveal: _fog[y, x] = false; break;
+            case Tool.Wall: _walls[y, x] = true; break;
+            case Tool.Erase: _walls[y, x] = false; break;
+        }
+        await SaveStateAsync();
+    }
+
+    private async Task FillFog(bool value)
+    {
+        for (int y = 0; y < Rows; y++)
+            for (int x = 0; x < Cols; x++)
+                _fog[y, x] = value;
+        await SaveStateAsync();
+    }
+
+    private Task SaveStateAsync() =>
+        Run(() => RemoteBattle.UpdateStateAsync(_state?.MapUrl, Cols, Rows, _walls, _fog));
+
+    private async Task ApplySize()
+    {
+        if (_state == null) return;
+        int cols = Math.Clamp(_editCols, 4, 60), rows = Math.Clamp(_editRows, 4, 60);
+        var walls = new bool[rows, cols];
+        var fog = new bool[rows, cols];
+        for (int y = 0; y < Math.Min(rows, Rows); y++)
+            for (int x = 0; x < Math.Min(cols, Cols); x++)
+            {
+                walls[y, x] = _walls[y, x];
+                fog[y, x] = _fog[y, x];
+            }
+        _state.Cols = cols; _state.Rows = rows;
+        _walls = walls; _fog = fog;
+        await SaveStateAsync();
+    }
+
+    private async Task PickMap()
+    {
+        if (_state == null) return;
+        try
+        {
+            var f = await Device.PickImageAsync();
+            if (f == null) return;
+            Ui.ShowToast("Caricamento mappa…");
+            var url = await SupabaseStorage.UploadBytesAsync("maps", f.FileName, f.Bytes);
+            _state.MapUrl = url;
+            await SaveStateAsync();
+            Ui.ShowToast("Mappa aggiornata ✓");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    // ---------------- iniziativa (solo Master) ----------------
+    private void RollInit()
+    {
+        var ch = _characters.FirstOrDefault(c => c.Id == _newCharId);
+        var mod = ch == null ? 0 : Character.Modifier(ch.Dex);
+        _newInit = DiceRoller.RollSimple(20, mod).Total;
+    }
+
+    private async Task Add()
+    {
+        var ch = _characters.FirstOrDefault(c => c.Id == _newCharId);
+        var c = new Combatant
+        {
+            Name = string.IsNullOrWhiteSpace(_newName) ? "Combattente" : _newName.Trim(),
+            Initiative = _newInit,
+            Hp = _newHp,
+            PortraitPath = ch?.PortraitPath ?? "",
+            CharacterId = ch?.Id
+        };
+        // prima cella libera
+        var occupied = _combatants.Where(t => t.GridX >= 0).Select(t => (t.GridX, t.GridY)).ToHashSet();
+        for (int y = 0; y < Rows && c.GridX < 0; y++)
+            for (int x = 0; x < Cols; x++)
+                if (!occupied.Contains((x, y))) { c.GridX = x; c.GridY = y; break; }
+
+        await Run(async () =>
+        {
+            c.Id = await RemoteBattle.AddCombatantAsync(c);
+            _combatants = await RemoteBattle.GetCombatantsAsync();
+        });
+        _newCharId = 0; _newName = ""; _newInit = 0; _newHp = 0;
+    }
+
+    private Task ChangeHp(Combatant c, int delta)
+    {
+        c.Hp = Math.Max(0, c.Hp + delta);
+        return Run(() => RemoteBattle.UpdateCombatantAsync(c));
+    }
+
+    private async Task Remove(Combatant c)
+    {
+        if (!await Device.ConfirmAsync("Rimuovi", $"Rimuovere {c.Name} dal combattimento?", "Rimuovi")) return;
+        _combatants.Remove(c);
+        await Run(() => RemoteBattle.DeleteCombatantAsync(c.Id));
+    }
+
+    private async Task NextTurn()
+    {
+        if (_combatants.Count == 0) return;
+        var ordered = _combatants.OrderByDescending(c => c.Initiative).ToList();
+        int next = (ordered.FindIndex(c => c.IsCurrent) + 1) % ordered.Count;
+        await Run(async () =>
+        {
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                bool should = i == next;
+                if (ordered[i].IsCurrent == should) continue;
+                ordered[i].IsCurrent = should;
+                await RemoteBattle.UpdateCombatantAsync(ordered[i]);
+            }
+        });
+    }
+
+    private async Task Reset()
+    {
+        if (!await Device.ConfirmAsync("Termina combattimento", "Rimuovere tutti i combattenti dalla griglia?", "Termina")) return;
+        _combatants.Clear();
+        await Run(RemoteBattle.ClearCombatantsAsync);
+    }
+
+    public void Dispose()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+    }
+}

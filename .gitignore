@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.keystore
+*.jks
+*.p12
+*.mobileprovision
+*.p8
+.DS_Store

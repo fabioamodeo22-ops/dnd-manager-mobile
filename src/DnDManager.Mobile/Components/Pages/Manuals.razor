@@ -1,0 +1,40 @@
+@page "/manuali"
+@inject UiState Ui
+@inject DeviceActions Device
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_items.Count == 0)
+{
+    <Empty Icon="📚">Nessun manuale nella libreria.</Empty>
+}
+else
+{
+    <div class="list">
+        @foreach (var m in _items)
+        {
+            <a class="row" @onclick="() => Device.OpenUrlAsync(m.FilePath)">
+                <div class="avatar">@(m.IsUrl && !m.FilePath.Contains("/storage/") ? "🌐" : "📕")</div>
+                <div class="grow"><div class="name">@m.Title</div></div>
+                <span class="chev">↗</span>
+            </a>
+        }
+    </div>
+}
+
+<p class="small muted mt">Il System Reference Document (SRD 5.1) di Wizards of the Coast è disponibile gratuitamente con licenza CC-BY-4.0.</p>
+
+@code {
+    private List<Manual> _items = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("📚 Manuali");
+        try { _items = await RemoteManuals.GetAllAsync(); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+}

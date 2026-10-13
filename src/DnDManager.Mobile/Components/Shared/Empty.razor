@@ -1,0 +1,9 @@
+<div class="empty">
+    <div class="big">@Icon</div>
+    <div>@ChildContent</div>
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "📜";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

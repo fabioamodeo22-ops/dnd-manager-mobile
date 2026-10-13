@@ -1,0 +1,101 @@
+@page "/dadi"
+@inject UiState Ui
+
+<div class="card">
+    <div class="roll-result">
+        @if (_last == null)
+        {
+            <div class="muted serif">Tocca un dado per tirare</div>
+        }
+        else
+        {
+            <div class="total @ResultCss">@_last.Total</div>
+            <div class="detail">@_last.Expression → @_last</div>
+            @if (ResultCss == "crit") { <div class="small" style="color:#8fd17f">Critico!</div> }
+            @if (ResultCss == "fumble") { <div class="small" style="color:#ef7f71">Fallimento critico…</div> }
+        }
+    </div>
+
+    <div class="segments" style="justify-content:center">
+        <button class="@(_mode == 0 ? "on" : "")" @onclick="() => _mode = 0">Normale</button>
+        <button class="@(_mode == 1 ? "on" : "")" @onclick="() => _mode = 1">Vantaggio</button>
+        <button class="@(_mode == 2 ? "on" : "")" @onclick="() => _mode = 2">Svantaggio</button>
+    </div>
+
+    <div class="dice-grid">
+        @foreach (var d in new[] { 4, 6, 8, 10, 12, 20, 100 })
+        {
+            <button class="die" @onclick="() => RollDie(d)">d@(d)</button>
+        }
+        <button class="die" style="font-size:.9rem" @onclick="() => Roll(_expr)">⚡ Tira</button>
+    </div>
+
+    <div class="grid2 mt">
+        <div>
+            <label>Espressione</label>
+            <input type="text" @bind="_expr" placeholder="2d6+3" autocapitalize="none" />
+        </div>
+        <div>
+            <label>Modificatore</label>
+            <div class="stepper">
+                <button @onclick="() => _mod--">−</button>
+                <div class="v" style="min-width:40px; font-size:1.1rem">@CharacterRules.FormatMod(_mod)</div>
+                <button @onclick="() => _mod++">+</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_history.Count > 0)
+{
+    <h3>Cronologia</h3>
+    <div class="history">
+        @foreach (var h in _history) { <div>@h</div> }
+    </div>
+}
+
+@code {
+    private DiceResult? _last;
+    private string _expr = "1d20";
+    private int _mod, _mode, _lastSides;
+    private readonly List<string> _history = new();
+
+    private string ResultCss =>
+        _last == null || _lastSides != 20 ? "" :
+        _last.Total - _last.Modifier == 20 ? "crit" :
+        _last.Total - _last.Modifier == 1 ? "fumble" : "";
+
+    protected override void OnInitialized() => Ui.SetTitle("🎲 Dadi");
+
+    private void RollDie(int sides)
+    {
+        if (sides == 20 && _mode != 0)
+        {
+            var a = DiceRoller.RollSimple(20, _mod);
+            var b = DiceRoller.RollSimple(20, _mod);
+            var keep = _mode == 1 ? (a.Total >= b.Total ? a : b) : (a.Total <= b.Total ? a : b);
+            keep.Expression = $"1d20{(_mod != 0 ? CharacterRules.FormatMod(_mod) : "")} ({(_mode == 1 ? "vantaggio" : "svantaggio")}: {a.Rolls[0]} / {b.Rolls[0]})";
+            Show(keep, 20);
+            return;
+        }
+        Show(DiceRoller.RollSimple(sides, _mod), sides);
+    }
+
+    private void Roll(string expr)
+    {
+        try
+        {
+            var r = DiceRoller.Roll(expr);
+            Show(r, r.Rolls.Length == 1 && expr.Replace(" ", "").ToLowerInvariant().Contains("d20") ? 20 : 0);
+        }
+        catch (FormatException ex) { Ui.ShowToast(ex.Message, true); }
+    }
+
+    private void Show(DiceResult r, int sides)
+    {
+        _last = r;
+        _lastSides = sides;
+        _history.Insert(0, $"{DateTime.Now:HH:mm}  {r.Expression} → {r}");
+        if (_history.Count > 30) _history.RemoveAt(_history.Count - 1);
+    }
+}

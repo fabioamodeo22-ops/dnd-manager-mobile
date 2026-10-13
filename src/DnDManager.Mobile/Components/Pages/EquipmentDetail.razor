@@ -1,0 +1,150 @@
+@page "/equipaggiamento/{Id:long}"
+@inject UiState Ui
+@inject NavigationManager Nav
+@inject DeviceActions Device
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_e == null)
+{
+    <Empty Icon="🎒">Oggetto non trovato.</Empty>
+}
+else if (!AppSession.IsMaster)
+{
+    <div class="card parchment">
+        @if (!string.IsNullOrEmpty(_e.ImagePath)) { <img src="@_e.ImagePath" alt="" style="width:72px; height:72px; border-radius:12px; float:right; object-fit:cover" /> }
+        <h2 style="margin-top:0">@_e.Name</h2>
+        <div class="small muted">@_e.Type</div>
+        <div class="statline"><span>Costo</span><span>@_e.Cost</span></div>
+        <div class="statline"><span>Peso</span><span>@_e.Weight</span></div>
+        <p class="pre mt">@_e.Description</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <label>Nome</label>
+        <input type="text" @bind="_e.Name" />
+        <div class="grid3">
+            <div><label>Tipo</label><input type="text" @bind="_e.Type" /></div>
+            <div><label>Costo</label><input type="text" @bind="_e.Cost" /></div>
+            <div><label>Peso</label><input type="text" @bind="_e.Weight" /></div>
+        </div>
+        <label>Descrizione</label>
+        <textarea @bind="_e.Description"></textarea>
+        <button class="btn ghost block mt" @onclick="PickIcon">🖼 @(string.IsNullOrEmpty(_e.ImagePath) ? "Aggiungi immagine" : "Cambia immagine")</button>
+    </div>
+
+    <div class="card">
+        <h3 style="margin-top:0">Assegnato a</h3>
+        @foreach (var c in _chars)
+        {
+            var has = _qty.TryGetValue(c.Id, out var q);
+            <div class="statline">
+                <label class="check" style="flex:1">
+                    <input type="checkbox" checked="@has" @onchange="ev => Toggle(c.Id, ev.Value)" />
+                    @c.Name
+                </label>
+                @if (has)
+                {
+                    <div class="stepper">
+                        <button style="width:36px; height:36px" @onclick="() => SetQty(c.Id, q - 1)">−</button>
+                        <span class="v" style="min-width:36px; font-size:1.1rem">@q</span>
+                        <button style="width:36px; height:36px" @onclick="() => SetQty(c.Id, q + 1)">+</button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="btn-row"><button class="btn" disabled="@_busy" @onclick="Save">💾 Salva</button></div>
+    <div class="btn-row"><button class="btn danger small" disabled="@_busy" @onclick="Delete">🗑 Elimina</button></div>
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private Equipment? _e;
+    private List<Character> _chars = new();
+    private Dictionary<long, int> _qty = new();
+    private bool _loading = true, _busy;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Ui.SetTitle("🎒 Oggetto");
+        _loading = true;
+        try
+        {
+            var rows = await SupabaseRest.GetAsync<DnDManager.Data.Remote.RestEquipment>($"equipment?id=eq.{Id}&select=*");
+            var r = rows.FirstOrDefault();
+            _e = r == null ? null : new Equipment
+            {
+                Id = r.Id, Name = r.Name, Type = r.Type, Cost = r.Cost, Weight = r.Weight,
+                Description = r.Description, ImagePath = r.ImageUrl
+            };
+            if (_e != null)
+            {
+                Ui.SetTitle("🎒 " + _e.Name);
+                if (AppSession.IsMaster)
+                {
+                    _chars = (await RemoteCharacters.GetAllAsync()).OrderBy(c => c.IsNpc).ThenBy(c => c.Name).ToList();
+                    _qty = await RemoteEquipment.GetAssignedCharacterQuantitiesAsync(_e.Id);
+                }
+            }
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Toggle(long characterId, object? value)
+    {
+        if (_e == null) return;
+        try
+        {
+            if (value is true) { await RemoteEquipment.AssignAsync(_e.Id, characterId, 1); _qty[characterId] = 1; }
+            else { await RemoteEquipment.UnassignAsync(_e.Id, characterId); _qty.Remove(characterId); }
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    private async Task SetQty(long characterId, int qty)
+    {
+        if (_e == null) return;
+        if (qty < 1) { await Toggle(characterId, false); return; }
+        try { await RemoteEquipment.UpdateQuantityAsync(_e.Id, characterId, qty); _qty[characterId] = qty; }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    private async Task PickIcon()
+    {
+        if (_e == null) return;
+        try
+        {
+            var f = await Device.PickImageAsync();
+            if (f == null) return;
+            _e.ImagePath = await SupabaseStorage.UploadBytesAsync("item-icons", f.FileName, f.Bytes);
+            await RemoteEquipment.SaveAsync(_e);
+            Ui.ShowToast("Immagine aggiornata ✓");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+
+    private async Task Save()
+    {
+        if (_e == null) return;
+        _busy = true;
+        try { await RemoteEquipment.SaveAsync(_e); Ui.ShowToast("Salvato ✓"); }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+
+    private async Task Delete()
+    {
+        if (_e == null) return;
+        if (!await Device.ConfirmAsync("Elimina", $"Eliminare \"{_e.Name}\"?", "Elimina")) return;
+        try { await RemoteEquipment.DeleteAsync(_e.Id); Nav.NavigateTo("equipaggiamento"); }
+        catch (Exception ex) { Ui.Error(ex); }
+    }
+}

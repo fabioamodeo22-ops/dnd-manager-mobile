@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="456" height="456" viewBox="0 0 456 456">
+  <!-- d20 stilizzato, disegno originale -->
+  <g transform="translate(228 228)" stroke-linejoin="round">
+    <polygon points="0,-120 104,-60 104,60 0,120 -104,60 -104,-60" fill="#C9A227" stroke="#F3E2A6" stroke-width="6"/>
+    <polygon points="0,-62 54,32 -54,32" fill="#E6C65C" stroke="#7A5A12" stroke-width="5"/>
+    <g stroke="#7A5A12" stroke-width="5" fill="none">
+      <line x1="0" y1="-120" x2="0" y2="-62"/>
+      <line x1="104" y1="-60" x2="0" y2="-62"/>
+      <line x1="-104" y1="-60" x2="0" y2="-62"/>
+      <line x1="104" y1="-60" x2="54" y2="32"/>
+      <line x1="-104" y1="-60" x2="-54" y2="32"/>
+      <line x1="104" y1="60" x2="54" y2="32"/>
+      <line x1="-104" y1="60" x2="-54" y2="32"/>
+      <line x1="0" y1="120" x2="54" y2="32"/>
+      <line x1="0" y1="120" x2="-54" y2="32"/>
+    </g>
+  </g>
+</svg>

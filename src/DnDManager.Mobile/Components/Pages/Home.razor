@@ -1,0 +1,156 @@
+@page "/home"
+@inject UiState Ui
+@inject NavigationManager Nav
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_campaign == null)
+{
+    <Empty Icon="🏰">Campagna non trovata o non accessibile.</Empty>
+}
+else
+{
+    <div class="card parchment">
+        <h2 style="margin-top:0" class="serif">@_campaign.Name</h2>
+        @if (!_editing)
+        {
+            <p class="pre">@(string.IsNullOrWhiteSpace(_campaign.Description) ? "Nessuna descrizione." : _campaign.Description)</p>
+            @if (AppSession.IsMaster)
+            {
+                @if (!string.IsNullOrWhiteSpace(_campaign.Notes))
+                {
+                    <h3>Note del Master</h3>
+                    <p class="pre small">@_campaign.Notes</p>
+                }
+                <button class="btn small" @onclick="() => _editing = true">✏️ Modifica</button>
+            }
+        }
+        else
+        {
+            <label>Nome</label>
+            <input type="text" @bind="_campaign.Name" />
+            <label>Descrizione</label>
+            <textarea @bind="_campaign.Description"></textarea>
+            <label>Note del Master</label>
+            <textarea @bind="_campaign.Notes"></textarea>
+            <div class="btn-row">
+                <button class="btn ghost" @onclick="Cancel">Annulla</button>
+                <button class="btn" disabled="@_busy" @onclick="Save">Salva</button>
+            </div>
+        }
+    </div>
+
+    <h2>🧙 Compagnia</h2>
+    @if (_party.Count == 0)
+    {
+        <p class="muted">Nessun personaggio giocante in questa campagna.</p>
+    }
+    else
+    {
+        <div class="list">
+            @foreach (var c in _party)
+            {
+                <a class="row" href="@($"personaggi/{c.Id}")">
+                    <Avatar Url="@c.PortraitPath" Name="@c.Name" />
+                    <div class="grow">
+                        <div class="name">@c.Name</div>
+                        <div class="sub">@c.Race @c.Class · liv. @c.Level @(string.IsNullOrEmpty(c.Owner) ? "" : $"· 👤 {c.Owner}")</div>
+                        @if (c.HpMax > 0)
+                        {
+                            <div style="display:flex; gap:8px; align-items:center; margin-top:5px">
+                                <div style="flex:1"><HpBar Current="c.HpCurrent" Max="c.HpMax" /></div>
+                                <span class="small muted">@c.HpCurrent/@c.HpMax</span>
+                            </div>
+                        }
+                    </div>
+                </a>
+            }
+        </div>
+    }
+
+    <h2>🧭 Missioni</h2>
+    <div class="grid2">
+        @foreach (var s in VisibleStatuses)
+        {
+            <a class="row" href="missioni" style="min-height:48px">
+                <span>@CharacterRules.QuestIcon(s)</span>
+                <div class="grow"><div class="name">@s</div></div>
+                <b class="serif" style="color:var(--gold-soft)">@_quests.Count(q => q.Status == s && (AppSession.IsMaster || !q.IsLocked))</b>
+            </a>
+        }
+    </div>
+
+    @if (AppSession.IsMaster && !string.IsNullOrWhiteSpace(_campaign.Story))
+    {
+        <h2>📖 Ultimo aggiornamento della storia</h2>
+        <a class="card" href="storia" style="display:block; text-decoration:none; color:inherit">
+            <p class="pre small">@StorySnippet</p>
+            <span class="small" style="color:var(--gold-soft)">Apri la storia ›</span>
+        </a>
+    }
+}
+
+@code {
+    private Campaign? _campaign;
+    private List<Character> _party = new();
+    private List<Quest> _quests = new();
+    private bool _loading = true, _editing, _busy;
+
+    private IEnumerable<string> VisibleStatuses =>
+        AppSession.IsMaster ? CharacterRules.QuestStatuses : new[] { "In corso" };
+
+    private string StorySnippet
+    {
+        get
+        {
+            var s = (_campaign?.Story ?? "").Trim();
+            return s.Length <= 400 ? s : "…" + s[^400..];
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Ui.SetTitle("🏰 Campagna");
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            var campaignTask = RemoteCampaign.GetCurrentAsync();
+            var charsTask = RemoteCharacters.GetAllAsync();
+            var questsTask = RemoteQuests.GetAllAsync();
+            await Task.WhenAll(campaignTask, charsTask, questsTask);
+            _campaign = campaignTask.Result;
+            _party = charsTask.Result.Where(c => !c.IsNpc).OrderBy(c => c.Name).ToList();
+            _quests = questsTask.Result;
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _loading = false; }
+    }
+
+    private async Task Cancel()
+    {
+        _editing = false;
+        await LoadAsync();
+    }
+
+    private async Task Save()
+    {
+        if (_campaign == null) return;
+        _busy = true;
+        try
+        {
+            await RemoteCampaign.SaveAsync(_campaign);
+            AppSession.CampaignName = _campaign.Name;
+            _editing = false;
+            Ui.ShowToast("Campagna salvata ✓");
+        }
+        catch (Exception ex) { Ui.Error(ex); }
+        finally { _busy = false; }
+    }
+}
