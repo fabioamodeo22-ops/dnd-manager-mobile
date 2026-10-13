@@ -8,7 +8,7 @@
 Campagne GdR per il tuo gruppo
 
 ## Descrizione breve Play Store (max 80)
-Campagne, personaggi e battaglie del tuo gruppo di gioco di ruolo, sempre in tasca
+Campagne, schede e battaglie del tuo gruppo di gioco di ruolo, sempre con te.
 
 ## Testo promozionale App Store (max 170)
 Il Master prepara la battaglia sul PC, i giocatori muovono i propri token dal telefono: tutto sincronizzato in tempo reale.
